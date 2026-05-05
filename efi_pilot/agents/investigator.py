@@ -1,14 +1,24 @@
-"""InvestigatorAgent —— 封装原 detect_factuality_hallucination（双路径串行+加权融合）。
-Phase1: 单轮，串行调用，prompt 原封不动。
-Phase2: 改为迭代循环 + reformulate_query + 双路径并行（同时记录串行 vs 并行性能）。
+"""InvestigatorAgent —— Phase2: 迭代双路径验证。
+
+Phase1: 单轮，串行调用。
+Phase2: 第1轮结束后若 final_score 落在不确定区间 [45, 65]，
+        用 reformulate_query 换角度搜索，最多跑 MAX_ITERATIONS 轮，
+        取置信度最高的一轮作为最终结果。
 """
 import re
 from sentence_transformers import util
 from efi_pilot.agents.base import AgentState, InvestigatorOutput, BaseAgent
 from efi_pilot.prompts.investigator import (
-    build_semantic_query_prompt, build_qwen_verify_prompt, QWEN_VERIFY_SYSTEM
+    build_semantic_query_prompt,
+    build_reformulate_prompt,
+    build_qwen_verify_prompt,
+    QWEN_VERIFY_SYSTEM,
 )
 from efi_pilot.utils.api_clients import bocha_search
+
+MAX_ITERATIONS = 2
+UNCERTAIN_LOW  = 45.0
+UNCERTAIN_HIGH = 65.0
 
 
 class InvestigatorAgent(BaseAgent):
@@ -18,66 +28,107 @@ class InvestigatorAgent(BaseAgent):
         self.embedder = embedder
 
     def run(self, state: AgentState) -> AgentState:
-        self._log(f"      🔍 Investigator 检测 {state.text_key}...", state.group_index)
-        self._log(f"      ═══ 开始双路径串行验证 ═══", state.group_index)
+        self._log(f"      Investigator 检测 {state.text_key}...", state.group_index)
 
-        semantic_score, semantic_evidence = self._semantic_similarity_check(state.text, state.group_index)
-        qwen_label, qwen_conf, qwen_evidence = self._qwen_search_verify(state.text, state.group_index)
+        best_result = None
+        prev_query  = ""
 
-        qwen_score = qwen_conf if qwen_label == "Real" else (100 - qwen_conf)
+        for iteration in range(1, MAX_ITERATIONS + 1):
+            self._log(f"      === 第{iteration}轮双路径验证 ===", state.group_index)
 
-        if qwen_conf >= 85:
-            alpha, beta = 0.35, 0.65
-        elif qwen_conf >= 70:
-            alpha, beta = 0.40, 0.60
-        elif qwen_conf >= 55:
-            alpha, beta = 0.45, 0.55
-        else:
-            alpha, beta = 0.60, 0.40
+            if iteration == 1:
+                semantic_score, semantic_evidence, search_query = \
+                    self._semantic_similarity_check(state.text, state.group_index)
+            else:
+                semantic_score, semantic_evidence, search_query = \
+                    self._semantic_similarity_check_reformulate(
+                        state.text, state.group_index, prev_query, best_result["final_score"]
+                    )
 
-        final_score = max(0.0, min(100.0, alpha * semantic_score + beta * qwen_score))
+            qwen_label, qwen_conf, qwen_evidence = \
+                self._qwen_search_verify(state.text, state.group_index)
 
-        label = "IsRW" if final_score >= 55 else "IsFacHal"
-        if final_score >= 55:
-            evidence = f"综合验证: 事实基本准确 | 语义:{semantic_score:.1f}% Qwen:{qwen_conf:.1f}%"
-        else:
-            evidence = f"综合验证: 存在事实性问题 | 语义:{semantic_score:.1f}% Qwen:{qwen_conf:.1f}% | {qwen_evidence}"
+            qwen_score = qwen_conf if qwen_label == "Real" else (100 - qwen_conf)
 
-        self._log(f"      ─────────────────────────", state.group_index)
-        self._log(f"      路径1（语义）: {semantic_score:.1f}%", state.group_index)
+            if qwen_conf >= 85:
+                alpha, beta = 0.35, 0.65
+            elif qwen_conf >= 70:
+                alpha, beta = 0.40, 0.60
+            elif qwen_conf >= 55:
+                alpha, beta = 0.45, 0.55
+            else:
+                alpha, beta = 0.60, 0.40
+
+            final_score = max(0.0, min(100.0, alpha * semantic_score + beta * qwen_score))
+
+            if final_score >= 55:
+                evidence = f"综合验证: 事实基本准确 | 语义:{semantic_score:.1f}% Qwen:{qwen_conf:.1f}%"
+            else:
+                evidence = f"综合验证: 存在事实性问题 | 语义:{semantic_score:.1f}% Qwen:{qwen_conf:.1f}% | {qwen_evidence}"
+
+            self._log(f"      路径1（语义）: {semantic_score:.1f}%", state.group_index)
+            self._log(
+                f"      路径2（Qwen）: {qwen_label} {qwen_conf:.1f}% → 真实性分数 {qwen_score:.1f}%",
+                state.group_index,
+            )
+            self._log(
+                f"      融合: {alpha}×{semantic_score:.1f} + {beta}×{qwen_score:.1f} = {final_score:.1f}%",
+                state.group_index,
+            )
+
+            current = dict(
+                final_score=final_score, label="IsRW" if final_score >= 55 else "IsFacHal",
+                evidence=evidence, semantic_score=semantic_score,
+                qwen_label=qwen_label, qwen_conf=qwen_conf, iteration=iteration,
+            )
+
+            if best_result is None or abs(final_score - 50) > abs(best_result["final_score"] - 50):
+                best_result = current
+
+            prev_query = search_query
+
+            in_uncertain = UNCERTAIN_LOW <= final_score <= UNCERTAIN_HIGH
+            if iteration < MAX_ITERATIONS and in_uncertain:
+                self._log(
+                    f"      分数 {final_score:.1f}% 在不确定区间，启动第{iteration+1}轮改写搜索",
+                    state.group_index,
+                )
+            else:
+                break
+
         self._log(
-            f"      路径2（Qwen）: {qwen_label} 置信度{qwen_conf:.1f}% → 真实性分数 {qwen_score:.1f}%",
+            f"      最终判断: {best_result['label']} (V_fac={best_result['final_score']:.1f}%, 轮数={best_result['iteration']})",
             state.group_index,
         )
-        self._log(
-            f"      融合公式: {alpha}×{semantic_score:.1f} + {beta}×{qwen_score:.1f} = {final_score:.1f}%",
-            state.group_index,
-        )
-        self._log(
-            f"      最终判断: {label} (综合真实性分数: {final_score:.1f}%)",
-            state.group_index,
-        )
-        self._log(f"      ═══════════════════════════", state.group_index)
 
         state.investigator_output = InvestigatorOutput(
-            label=label,
-            confidence=final_score,
-            evidence=evidence,
-            semantic_score=semantic_score,
-            qwen_label=qwen_label,
-            qwen_confidence=qwen_conf,
+            label=best_result["label"],
+            confidence=best_result["final_score"],
+            evidence=best_result["evidence"],
+            semantic_score=best_result["semantic_score"],
+            qwen_label=best_result["qwen_label"],
+            qwen_confidence=best_result["qwen_conf"],
+            iterations=best_result["iteration"],
         )
         return state
 
-    # ── 路径1：语义相似度 ────────────────────────────────────────────────
+    # ── 路径1：语义相似度（第1轮）────────────────────────────────────────
 
     def _semantic_similarity_check(self, text: str, group_index: int):
-        self._log(f"      🔍 路径1: 语义相似度验证...", group_index)
         prompt = build_semantic_query_prompt(text)
+        return self._run_semantic(prompt, text, group_index)
 
+    def _semantic_similarity_check_reformulate(
+        self, text: str, group_index: int, prev_query: str, prev_score: float
+    ):
+        prompt = build_reformulate_prompt(text, prev_query, prev_score)
+        return self._run_semantic(prompt, text, group_index)
+
+    def _run_semantic(self, prompt: str, text: str, group_index: int):
+        self._log(f"      路径1: 语义相似度验证...", group_index)
         try:
             response = self.clients["deepseek"].chat.completions.create(
-                model="deepseek-chat",
+                model="deepseek-v4-flash",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3,
                 stream=False,
@@ -85,7 +136,7 @@ class InvestigatorAgent(BaseAgent):
             content = response.choices[0].message.content.strip()
             search_query, key_facts = self._parse_semantic_query_response(content)
         except Exception as e:
-            self._log(f"         ⚠️ LLM处理失败: {str(e)}", group_index)
+            self._log(f"         LLM处理失败: {str(e)}", group_index)
             search_query = text[:50]
             key_facts = [text[:100]]
 
@@ -96,26 +147,18 @@ class InvestigatorAgent(BaseAgent):
         )
 
         if not search_results:
-            self._log(f"         ⚠️ 无搜索结果", group_index)
-            return 30.0, "无法获取搜索结果"
-
-        self._log(f"         找到 {len(search_results)} 个结果", group_index)
-        self._log(f"         提取 {len(key_facts)} 个关键事实", group_index)
+            self._log(f"         无搜索结果", group_index)
+            return 30.0, "无法获取搜索结果", search_query
 
         context_texts = [f"{r['title']} {r['snippet']}" for r in search_results]
-        fact_emb = self.embedder.encode(key_facts, convert_to_tensor=True)
+        fact_emb = self.embedder.encode(key_facts or [text[:100]], convert_to_tensor=True)
         ctx_emb  = self.embedder.encode(context_texts, convert_to_tensor=True)
-
-        sims = util.cos_sim(fact_emb, ctx_emb)
-        avg_sim = sims.max(dim=1).values.mean().item()
-        score = avg_sim * 100
-
-        self._log(f"         语义相似度得分: {score:.1f}%", group_index)
-        return score, "语义验证完成"
+        score = util.cos_sim(fact_emb, ctx_emb).max(dim=1).values.mean().item() * 100
+        self._log(f"         语义相似度: {score:.1f}%", group_index)
+        return score, "语义验证完成", search_query
 
     def _parse_semantic_query_response(self, content: str):
-        search_query = ""
-        key_facts = []
+        search_query, key_facts = "", []
         for line in content.split('\n'):
             line = line.strip()
             if '搜索查询' in line:
@@ -124,18 +167,13 @@ class InvestigatorAgent(BaseAgent):
                 fact = line.split('：', 1)[-1].split(':', 1)[-1].strip()
                 if fact:
                     key_facts.append(fact)
-        if not search_query:
-            search_query = ""
-        if not key_facts:
-            key_facts = []
         return search_query, key_facts
 
     # ── 路径2：Qwen 联网搜索 ─────────────────────────────────────────────
 
     def _qwen_search_verify(self, text: str, group_index: int):
-        self._log(f"      🔍 路径2: Qwen联网搜索验证...", group_index)
+        self._log(f"      路径2: Qwen联网搜索验证...", group_index)
         prompt = build_qwen_verify_prompt(text)
-
         try:
             response = self.clients["qwen"].chat.completions.create(
                 model="qwen3.6-flash",
@@ -150,20 +188,17 @@ class InvestigatorAgent(BaseAgent):
             self._log(f"         [DEBUG] Qwen返回:\n{content}", group_index, print_console=False)
             label, confidence, evidence = self._parse_qwen_response(content)
         except Exception as e:
-            self._log(f"         ⚠️ Qwen验证失败: {str(e)}", group_index)
+            self._log(f"         Qwen验证失败: {str(e)}", group_index)
             import traceback
-            self._log(f"         详细错误: {traceback.format_exc()}", group_index, print_console=False)
+            self._log(traceback.format_exc(), group_index, print_console=False)
             label, confidence, evidence = "Real", 30.0, f"验证失败: {str(e)}"
 
         self._log(f"         Qwen判断: {label} (置信度: {confidence:.1f}%)", group_index)
         return label, confidence, evidence
 
     def _parse_qwen_response(self, content: str):
-        label = "Real"
-        confidence = 50.0
-        evidence = "事实基本准确"
+        label, confidence, evidence = "Real", 50.0, "事实基本准确"
         confidence_parsed = False
-
         for line in content.split('\n'):
             line = line.strip()
             if '判断结果' in line:
@@ -182,11 +217,5 @@ class InvestigatorAgent(BaseAgent):
                     pass
             elif '问题说明' in line:
                 parts = line.split('：', 1)
-                if len(parts) == 2:
-                    evidence = parts[1].strip()
-                else:
-                    parts = line.split(':', 1)
-                    if len(parts) == 2:
-                        evidence = parts[1].strip()
-
+                evidence = parts[1].strip() if len(parts) == 2 else line.split(':', 1)[-1].strip()
         return label, confidence, evidence

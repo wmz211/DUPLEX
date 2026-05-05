@@ -74,12 +74,12 @@ def _process_group_hd(
         if state.arbiter_output.mapped_label == "IsFaiHal":
             state.hd_label = "FaiHal"
             logger.log(
-                f"{text_key}: FaiHal by Arbiter ({state.arbiter_output.confidence:.1f}%)",
+                f"{text_key}: FaiHal by Arbiter [{state.arbiter_output.raw_label}] ({state.arbiter_output.confidence:.1f}%)",
                 doc_index=group_index,
             )
         else:
             logger.log(
-                f"{text_key}: passed Arbiter ({state.arbiter_output.confidence:.1f}%)",
+                f"{text_key}: passed Arbiter [{state.arbiter_output.raw_label}] ({state.arbiter_output.confidence:.1f}%)",
                 doc_index=group_index,
             )
         states.append(state)

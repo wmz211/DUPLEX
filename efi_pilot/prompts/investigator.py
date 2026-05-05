@@ -1,11 +1,27 @@
-"""Investigator prompts —— 原封不动从 qwen_search.py 迁移。
+"""Investigator prompts。
 
-build_semantic_query_prompt : semantic_similarity_check 的 LLM 调用
-build_qwen_verify_prompt    : qwen_search_verify 的 prompt（含长 few-shot 例）
-Phase2 迭代改写查询时，在此文件新增 build_reformulate_prompt。
+build_semantic_query_prompt : 第1轮语义搜索查询提取
+build_reformulate_prompt    : Phase2 第2轮查询改写（基于第1轮结果）
+build_qwen_verify_prompt    : Qwen 联网核查 prompt（含长 few-shot 例）
 """
 
 QWEN_VERIFY_SYSTEM = "你是专业的事实核查专家，擅长通过联网搜索验证新闻真实性。"
+
+
+def build_reformulate_prompt(text: str, prev_query: str, prev_score: float) -> str:
+    return f"""上一轮搜索未能得出确定结论（综合真实性得分：{prev_score:.1f}%，处于不确定区间）。
+请基于以下新闻文本，从不同角度生成一个新的搜索查询，重点核查上一轮未能覆盖的细节。
+
+新闻文本：
+{text}
+
+上一轮查询：{prev_query}
+
+请按以下格式回答：
+搜索查询：[新的搜索查询，不超过30字，角度与上一轮不同]
+关键事实1：[待核查事实]
+关键事实2：[待核查事实]
+关键事实3：[待核查事实]"""
 
 
 def build_semantic_query_prompt(text: str) -> str:

@@ -1,21 +1,27 @@
-"""ArbiterAgent —— 封装原 detect_faithfulness_hallucination。
-Phase1: 二元输出（Real / Faithfulness），prompt 和解析逻辑原封不动。
-Phase2: 替换为 4 类三角辩论 prompt（修改 prompts/arbiter.py 即可）。
+"""ArbiterAgent —— Phase2: 四分类三角辩论。
+只有 GenuineContradiction → IsFaiHal，其余三类 → IsRW（进 Investigator）。
 """
 import re
 from efi_pilot.agents.base import AgentState, ArbiterOutput, BaseAgent
 from efi_pilot.prompts.arbiter import build_arbiter_prompt, ARBITER_SYSTEM
 
+_LABEL_MAP = {
+    "GenuineContradiction": "IsFaiHal",
+    "PerspectiveDiversity":  "IsRW",
+    "TemporalUpdate":        "IsRW",
+    "NoContradiction":       "IsRW",
+}
+
 
 class ArbiterAgent(BaseAgent):
 
     def run(self, state: AgentState) -> AgentState:
-        self._log(f"      🔍 Arbiter 检测 {state.text_key}...", state.group_index)
+        self._log(f"      Arbiter 检测 {state.text_key}...", state.group_index)
         prompt = build_arbiter_prompt(state.text)
 
         try:
             response = self.clients["deepseek"].chat.completions.create(
-                model="deepseek-chat",
+                model="deepseek-v4-flash",
                 messages=[
                     {"role": "system", "content": ARBITER_SYSTEM},
                     {"role": "user",   "content": prompt},
@@ -26,17 +32,15 @@ class ArbiterAgent(BaseAgent):
             content = response.choices[0].message.content.strip()
             self._log(f"      [DEBUG] Arbiter 原始返回:\n{content}",
                       state.group_index, print_console=False)
-
-            raw_label, confidence, evidence = self._parse_response(content)
+            raw_label, confidence, evidence, reasoning = self._parse_response(content)
 
         except Exception as e:
-            self._log(f"      ⚠️ Arbiter 调用失败: {str(e)}", state.group_index)
-            raw_label, confidence, evidence = "Real", 50.0, f"检测失败: {str(e)}"
+            self._log(f"      Arbiter 调用失败: {str(e)}", state.group_index)
+            raw_label, confidence, evidence, reasoning = "NoContradiction", 50.0, f"检测失败: {str(e)}", None
 
-        # Phase1 映射：Faithfulness → IsFaiHal，Real → IsRW
-        mapped = "IsFaiHal" if raw_label == "Faithfulness" else "IsRW"
+        mapped = _LABEL_MAP.get(raw_label, "IsRW")
         self._log(
-            f"      Faithfulness分析: {raw_label} (置信度: {confidence:.1f}%)",
+            f"      Arbiter: {raw_label} → {mapped} (置信度: {confidence:.1f}%)",
             state.group_index,
         )
         state.arbiter_output = ArbiterOutput(
@@ -44,23 +48,24 @@ class ArbiterAgent(BaseAgent):
             mapped_label=mapped,
             confidence=confidence,
             evidence=evidence,
+            reasoning=reasoning,
         )
         return state
 
     def _parse_response(self, content: str):
-        label = "Real"
+        label = "NoContradiction"
         confidence = 50.0
-        evidence = "无矛盾"
+        evidence = ""
         confidence_parsed = False
 
         for line in content.split('\n'):
             line = line.strip()
 
             if '判断结果' in line:
-                if 'Faithfulness' in line:
-                    label = "Faithfulness"
-                elif 'Real' in line:
-                    label = "Real"
+                for key in _LABEL_MAP:
+                    if key in line:
+                        label = key
+                        break
 
             elif line.startswith('置信度') and not confidence_parsed:
                 try:
@@ -72,7 +77,7 @@ class ArbiterAgent(BaseAgent):
                 except Exception:
                     pass
 
-            elif '矛盾证据' in line or '问题说明' in line:
+            elif '矛盾证据' in line or '判断依据' in line:
                 parts = line.split('：', 1)
                 if len(parts) == 2:
                     evidence = parts[1].strip()
@@ -81,4 +86,4 @@ class ArbiterAgent(BaseAgent):
                     if len(parts) == 2:
                         evidence = parts[1].strip()
 
-        return label, confidence, evidence
+        return label, confidence, evidence, None
