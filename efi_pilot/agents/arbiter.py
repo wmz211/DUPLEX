@@ -56,6 +56,8 @@ class ArbiterAgent(BaseAgent):
         label = "NoContradiction"
         confidence = 50.0
         evidence = ""
+        sentence_a = ""
+        sentence_b = ""
         confidence_parsed = False
 
         for line in content.split('\n'):
@@ -77,13 +79,30 @@ class ArbiterAgent(BaseAgent):
                 except Exception:
                     pass
 
-            elif '矛盾证据' in line or '判断依据' in line:
+            elif '矛盾句A' in line:
+                parts = line.split('：', 1)
+                if len(parts) == 2:
+                    sentence_a = parts[1].strip()
+
+            elif '矛盾句B' in line:
+                parts = line.split('：', 1)
+                if len(parts) == 2:
+                    sentence_b = parts[1].strip()
+
+            elif '为何不能同时为真' in line or '判断依据' in line or '矛盾证据' in line:
                 parts = line.split('：', 1)
                 if len(parts) == 2:
                     evidence = parts[1].strip()
-                else:
-                    parts = line.split(':', 1)
-                    if len(parts) == 2:
-                        evidence = parts[1].strip()
+
+        # GenuineContradiction 必须有矛盾句对，否则降级
+        if label == "GenuineContradiction" and not (sentence_a and sentence_b):
+            self._log(
+                f"      [Arbiter] GenuineContradiction 但未提供矛盾句对，降级为 NoContradiction",
+                print_console=False,
+            )
+            label = "NoContradiction"
+
+        if sentence_a and sentence_b:
+            evidence = f"A:「{sentence_a}」 B:「{sentence_b}」"
 
         return label, confidence, evidence, None
