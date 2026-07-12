@@ -37,6 +37,8 @@ class InvestigatorOutput:
     qwen_label: str
     qwen_confidence: float
     iterations: int = 1    # Phase2 迭代次数（Phase1 固定为 1）
+    stop_reason: str = ""
+    qwen_rounds: list = field(default_factory=list)
 
 
 @dataclass
