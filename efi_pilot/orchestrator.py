@@ -13,7 +13,7 @@ from efi_pilot.agents.dispatcher import DispatcherAgent
 from efi_pilot.agents.investigator import InvestigatorAgent
 from efi_pilot.agents.judge import JudgeAgent
 from efi_pilot.agents.linguist import LinguistAgent
-from efi_pilot.utils.api_clients import make_api_clients
+from efi_pilot.utils.api_clients import make_api_clients, make_qwen_client
 from efi_pilot.utils.data_io import (
     append_to_excel,
     filter_docs,
@@ -417,9 +417,7 @@ def run_efi(
             if print_console:
                 log.info(msg)
 
-    api_clients = make_api_clients(
-        config["deepseek_key"], config["bocha_key"], config["qwen_key"]
-    )
+    api_clients = {"qwen": make_qwen_client(config["qwen_key"])}
     linguist = LinguistAgent(api_clients, _SimpleLogger())
 
     log.info("=" * 60 + "\nStarting EFI-Pilot EFI")

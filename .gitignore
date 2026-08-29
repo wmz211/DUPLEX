@@ -1,0 +1,29 @@
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Editor and local agent state
+.idea/
+.claude/
+.codegraph/
+.jbeval/
+
+# Local datasets and generated experiment artifacts
+hallu/
+log/
+res/
+ablation_res/
+
+# Local paper/extraction files
+paper.pdf
+paper.txt
+fire.txt
+local.txt
+fact-audit.txt
