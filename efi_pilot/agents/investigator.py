@@ -13,6 +13,7 @@ from efi_pilot.prompts.investigator import (
     build_qwen_verify_prompt,
     build_semantic_query_prompt,
 )
+from efi_pilot.config import QWEN_MODEL
 EVIDENCE_SUPPORT_THRESHOLD = 45.0
 MAX_QWEN_ROUNDS = 2
 
@@ -212,8 +213,8 @@ class InvestigatorAgent(BaseAgent):
         prompt = build_semantic_query_prompt(text)
         self._log("      路径1: Bocha单轮语义相似度验证...", group_index)
         try:
-            response = self.clients["deepseek"].chat.completions.create(
-                model="deepseek-v4-flash",
+            response = self.clients["qwen"].chat.completions.create(
+                model=QWEN_MODEL,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3,
                 stream=False,
@@ -258,7 +259,7 @@ class InvestigatorAgent(BaseAgent):
         )
         try:
             response = self.clients["qwen"].chat.completions.create(
-                model="qwen3.6-flash",
+                model=QWEN_MODEL,
                 messages=[
                     {"role": "system", "content": QWEN_VERIFY_SYSTEM},
                     {"role": "user", "content": prompt},

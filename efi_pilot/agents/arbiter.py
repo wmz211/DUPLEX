@@ -4,6 +4,7 @@
 import re
 from efi_pilot.agents.base import AgentState, ArbiterOutput, BaseAgent
 from efi_pilot.prompts.arbiter import build_arbiter_prompt, ARBITER_SYSTEM
+from efi_pilot.config import QWEN_MODEL
 
 _LABEL_MAP = {
     "GenuineContradiction": "IsFaiHal",
@@ -20,8 +21,8 @@ class ArbiterAgent(BaseAgent):
         prompt = build_arbiter_prompt(state.text)
 
         try:
-            response = self.clients["deepseek"].chat.completions.create(
-                model="deepseek-v4-flash",
+            response = self.clients["qwen"].chat.completions.create(
+                model=QWEN_MODEL,
                 messages=[
                     {"role": "system", "content": ARBITER_SYSTEM},
                     {"role": "user",   "content": prompt},

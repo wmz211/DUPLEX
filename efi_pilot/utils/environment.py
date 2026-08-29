@@ -5,7 +5,6 @@ import os
 
 
 API_KEY_ENV_VARS = {
-    "deepseek": "DEEPSEEK_API_KEY",
     "bocha": "BOCHA_API_KEY",
     "qwen": "QWEN_API_KEY",
 }

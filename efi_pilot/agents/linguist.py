@@ -15,6 +15,7 @@ Step B: _judge_factuality
 from efi_pilot.agents.base import AgentState, GroupState, LinguistOutput, BaseAgent
 from efi_pilot.prompts.linguist import build_linguist_prompt, LINGUIST_SYSTEM
 from efi_pilot.utils.naming_bridge import efi_to_internal
+from efi_pilot.config import QWEN_MODEL
 
 
 class LinguistAgent(BaseAgent):
@@ -87,7 +88,7 @@ class LinguistAgent(BaseAgent):
         prompt = build_linguist_prompt(text, event)
         try:
             response = self.clients["qwen"].chat.completions.create(
-                model="qwen3.6-flash",
+                model=QWEN_MODEL,
                 messages=[
                     {"role": "system", "content": LINGUIST_SYSTEM},
                     {"role": "user",   "content": prompt},

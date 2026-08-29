@@ -4,6 +4,7 @@
 claim_type 写入 AgentState，供后续 Investigator 日志和 ablation 分析使用。
 """
 from efi_pilot.agents.base import AgentState, BaseAgent
+from efi_pilot.config import QWEN_MODEL
 
 _CLAIM_TYPES = ("numerical", "event", "entity", "temporal")
 
@@ -23,8 +24,8 @@ class DispatcherAgent(BaseAgent):
 
     def run(self, state: AgentState) -> AgentState:
         try:
-            response = self.clients["deepseek"].chat.completions.create(
-                model="deepseek-v4-flash",
+            response = self.clients["qwen"].chat.completions.create(
+                model=QWEN_MODEL,
                 messages=[{"role": "user", "content": _PROMPT.format(text=state.text[:300])}],
                 temperature=0.0,
                 max_tokens=10,

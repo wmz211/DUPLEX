@@ -67,7 +67,7 @@ class InvestigatorLoopTests(unittest.TestCase):
         logger = Mock()
         logger.log = Mock()
         return InvestigatorAgent({
-            "deepseek": Mock(), "bocha_key": "x", "qwen": Mock()
+            "bocha_key": "x", "qwen": Mock()
         }, logger, Mock())
 
     def test_sufficient_evidence_calls_semantic_and_qwen_once(self):

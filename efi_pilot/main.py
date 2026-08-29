@@ -71,7 +71,7 @@ def main():
 
 def _run_hd(args):
     from efi_pilot.orchestrator import run_hd
-    api_keys = require_api_keys("deepseek", "bocha", "qwen")
+    api_keys = require_api_keys("bocha", "qwen")
     print(f"[HD 模式] 读取: {args.json_cn}")
     documents = load_json(args.json_cn)
     if os.path.exists(args.json_en):
@@ -79,7 +79,6 @@ def _run_hd(args):
     print(f"共 {len(documents)} 个文档，使用 {args.workers} 个线程")
 
     config = {
-        'deepseek_key':  api_keys["deepseek"],
         'bocha_key':     api_keys["bocha"],
         'qwen_key':      api_keys["qwen"],
         'max_workers':   args.workers,

@@ -8,10 +8,11 @@ from datetime import datetime
 import argparse
 import time
 from efi_pilot.utils.environment import require_api_keys
+from efi_pilot.config import QWEN_MODEL
 
 
 class EventFactualityAnalyzer:
-    def __init__(self, model="qwen-plus"):
+    def __init__(self, model=QWEN_MODEL):
         """
         Initialize Event Factuality Analyzer
 
@@ -498,8 +499,8 @@ def main():
                         help='Starting document ID (optional)')
     parser.add_argument('--end-id', type=str, default=None,
                         help='Ending document ID (optional)')
-    parser.add_argument('--model', default='qwen-plus',
-                        help='Model name to use (default: qwen-plus)')
+    parser.add_argument('--model', default=QWEN_MODEL,
+                        help=f'Model name to use (default: {QWEN_MODEL})')
 
     args = parser.parse_args()
 

@@ -9,13 +9,14 @@
 涉及文件：
 
 - `efi_pilot/utils/api_clients.py`
+- `efi_pilot/config.py`
 - `efi_pilot/utils/environment.py`
 - `.env.example`
 - `tests/test_environment.py`
 
 步骤：
 
-1. 新增统一模型常量 `QWEN_MODEL = "qwen3.8-flash"`。
+1. 在无第三方依赖的配置模块中新增统一模型常量 `QWEN_MODEL = "qwen3.8-flash"`。
 2. 删除 DeepSeek 客户端构造和 `DEEPSEEK_API_KEY` 映射。
 3. 将线程客户端工厂改为只接收 Bocha Key 与 Qwen Key。
 4. 更新环境变量示例和测试，确认只要求实际使用的变量。

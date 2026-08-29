@@ -3,11 +3,6 @@ import json
 import requests
 from openai import OpenAI
 
-
-def make_deepseek_client(api_key: str) -> OpenAI:
-    return OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
-
-
 def make_qwen_client(api_key: str) -> OpenAI:
     return OpenAI(
         api_key=api_key,
@@ -15,10 +10,9 @@ def make_qwen_client(api_key: str) -> OpenAI:
     )
 
 
-def make_api_clients(deepseek_key: str, bocha_key: str, qwen_key: str) -> dict:
+def make_api_clients(bocha_key: str, qwen_key: str) -> dict:
     """创建一组 API 客户端。per-thread 调用，不共享。"""
     return {
-        "deepseek": make_deepseek_client(deepseek_key),
         "bocha_key": bocha_key,
         "qwen": make_qwen_client(qwen_key),
     }

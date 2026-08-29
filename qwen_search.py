@@ -1,7 +1,6 @@
 import requests
 import json
 import random
-from openai import OpenAI
 from typing import Dict, List, Tuple
 import os
 import pandas as pd
@@ -11,6 +10,8 @@ import openpyxl
 import threading
 from queue import Queue, PriorityQueue
 from efi_pilot.utils.environment import require_api_keys
+from efi_pilot.config import QWEN_MODEL
+from efi_pilot.utils.api_clients import make_qwen_client
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 
@@ -152,19 +153,10 @@ class ResultCollector:
 
 
 class NewsHallucinationDetector:
-    def __init__(self, deepseek_api_key: str, bocha_api_key: str, qwen_api_key: str,
+    def __init__(self, bocha_api_key: str, qwen_api_key: str,
                  logger: ThreadSafeLogger, shared_embedder=None):
-        self.deepseek_client = OpenAI(
-            api_key=deepseek_api_key,
-            base_url="https://api.deepseek.com"
-        )
-
         self.bocha_api_key = bocha_api_key
-
-        self.qwen_client = OpenAI(
-            api_key=qwen_api_key,
-            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
-        )
+        self.qwen_client = make_qwen_client(qwen_api_key)
 
         self.logger = logger
         self.doc_index = None  # 当前处理的文档索引
@@ -249,8 +241,8 @@ class NewsHallucinationDetector:
 矛盾证据：[如果是Faithfulness，列出具体矛盾的句子对；如果是Real，写"无矛盾"]"""
 
         try:
-            response = self.deepseek_client.chat.completions.create(
-                model="deepseek-chat",
+            response = self.qwen_client.chat.completions.create(
+                model=QWEN_MODEL,
                 messages=[
                     {"role": "system",
                      "content": "你是逻辑一致性分析专家，擅长发现文本中的内部矛盾。置信度表示你对判断结果的确定程度。"},
@@ -361,8 +353,8 @@ class NewsHallucinationDetector:
 关键事实3：[第三个事实]"""
 
         try:
-            response = self.deepseek_client.chat.completions.create(
-                model="deepseek-chat",
+            response = self.qwen_client.chat.completions.create(
+                model=QWEN_MODEL,
                 messages=[{"role": "user", "content": combined_prompt}],
                 temperature=0.3,
                 stream=False
@@ -480,7 +472,7 @@ eg:**捏造因果关系或背景**:为真实事件编造一个不存在的动机
 
         try:
             response = self.qwen_client.chat.completions.create(
-                model="qwen-plus",
+                model=QWEN_MODEL,
                 messages=[
                     {"role": "system", "content": "你是专业的事实核查专家，擅长通过联网搜索验证新闻真实性。"},
                     {"role": "user", "content": verify_prompt}
@@ -756,7 +748,7 @@ def main():
         return
 
     # API配置只从环境变量读取，避免密钥进入源码或命令历史。
-    api_keys = require_api_keys("deepseek", "bocha", "qwen")
+    api_keys = require_api_keys("bocha", "qwen")
 
     # 文件配置
     input_file = "hallu/extr-hallu-final.json"
@@ -781,7 +773,7 @@ def main():
 
     logger.log("=" * 60, doc_index=None)
     logger.log(f"🚀 新闻幻觉检测系统启动（多线程版本 - {MAX_WORKERS}线程）", doc_index=None)
-    logger.log("   优化: 搜索结果3个 | DeepSeek调用合并 | 线程安全日志 | 按序输出", doc_index=None)
+    logger.log("   优化: 搜索结果3个 | Qwen调用统一 | 线程安全日志 | 按序输出", doc_index=None)
     logger.log("=" * 60, doc_index=None)
 
     # 读取输入文件
@@ -857,7 +849,7 @@ def main():
         for new_index, (orig_index, doc) in enumerate(docs_to_process):  # 重新编号从0开始
             # 为每个任务创建独立的detector实例，但共享embedder模型
             detector = NewsHallucinationDetector(
-                api_keys["deepseek"], api_keys["bocha"], api_keys["qwen"], logger,
+                api_keys["bocha"], api_keys["qwen"], logger,
                 shared_embedder=shared_embedder  # 传递共享的模型
             )
             future = executor.submit(

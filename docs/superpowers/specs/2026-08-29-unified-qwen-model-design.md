@@ -17,7 +17,7 @@
 
 ## 架构与数据流
 
-`efi_pilot.utils.api_clients` 提供 Qwen 客户端、Bocha 搜索函数和统一模型常量。HD 编排器为每个工作线程创建 Qwen 客户端，并以 `qwen` 键传给各 Agent。Dispatcher、Arbiter、Investigator 和 Linguist 不再访问 `deepseek` 键。
+轻量模块 `efi_pilot.config` 提供统一模型常量，`efi_pilot.utils.api_clients` 提供 Qwen 客户端和 Bocha 搜索函数。HD 编排器为每个工作线程创建 Qwen 客户端，并以 `qwen` 键传给各 Agent。Dispatcher、Arbiter、Investigator 和 Linguist 不再访问 `deepseek` 键。模型常量与第三方客户端依赖分离，保证 Agent 可在不安装网络 SDK 的环境中接受离线测试。
 
 命令行入口从环境变量读取必要密钥：HD 读取 Qwen 与 Bocha，EFI 只读取 Qwen。密钥值只在内存中的配置和客户端之间传递，日志与异常信息不得输出密钥。
 

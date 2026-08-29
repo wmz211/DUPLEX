@@ -36,9 +36,7 @@ def _process_group_hd(
     evidence_writer=None,
     calibration_writer=None,
 ):
-    api_clients = make_api_clients(
-        api_config["deepseek_key"], api_config["bocha_key"], api_config["qwen_key"]
-    )
+    api_clients = make_api_clients(api_config["bocha_key"], api_config["qwen_key"])
     if api_config.get("investigator_calibration"):
         api_clients["investigator_calibration"] = api_config["investigator_calibration"]
     dispatcher = DispatcherAgent(api_clients, logger)
@@ -333,7 +331,7 @@ def run_hd(documents: list, config: dict, output_file: str, log_file: str):
     docs_to_process = filter_docs(documents, config.get("start_id"), config.get("end_id"))
     logger.log(f"Documents to process: {len(docs_to_process)}", doc_index=None)
 
-    api_config = {k: config[k] for k in ("deepseek_key", "bocha_key", "qwen_key")}
+    api_config = {k: config[k] for k in ("bocha_key", "qwen_key")}
     if config.get("investigator_calibration"):
         api_config["investigator_calibration"] = _load_json_config(
             config["investigator_calibration"]
